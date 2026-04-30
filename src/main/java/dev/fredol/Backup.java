@@ -91,6 +91,9 @@ public class Backup implements ModInitializer {
 				server.getPlayerCount() == 0
 				&& (lastActivityTime == null || LocalDateTime.now()
 						.isAfter(lastActivityTime.plus(config.intervalMinutes(), ChronoUnit.MINUTES)))) {
+			String msg = "No players connected or recent activity, skipping backup";
+			LOGGER.info(msg);
+			broadcast(server, msg);
 			return;
 		}
 		if (!Files.exists(BACKUP_DIR)) {
