@@ -1,7 +1,7 @@
 package dev.fredol;
 
 public record Config(int intervalMinutes,
-        int maxBackups) {
+        int maxBackups, Boolean onlyWhenPlayersConnected) {
 
     public Config {
         if (intervalMinutes <= 0) {
@@ -15,6 +15,6 @@ public record Config(int intervalMinutes,
     }
 
     public Config() {
-        this(15, 20);
+        this(15, 20, true);
     }
 }

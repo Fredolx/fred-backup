@@ -2,10 +2,13 @@ package dev.fredol;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.networking.v1.PacketSender;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.BufferedOutputStream;
@@ -20,6 +23,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -54,11 +58,24 @@ public class Backup implements ModInitializer {
 			".DS_Store",
 			"Thumbs.db");
 
+	private volatile LocalDateTime lastActivityTime = null;
+
 	@Override
 	public void onInitialize() {
 		getConfig();
 		ServerLifecycleEvents.SERVER_STARTED.register(this::onStart);
 		ServerLifecycleEvents.SERVER_STOPPING.register(this::onShutdown);
+		ServerPlayConnectionEvents.JOIN.register(this::onPlayerConnect);
+		ServerPlayConnectionEvents.DISCONNECT.register(this::onPlayerDisconnected);
+	}
+
+	private void onPlayerDisconnected(ServerGamePacketListenerImpl handler, MinecraftServer server) {
+		if (server.getPlayerCount() <= 1)
+			lastActivityTime = LocalDateTime.now();
+	}
+
+	private void onPlayerConnect(ServerGamePacketListenerImpl handler, PacketSender sender, MinecraftServer server) {
+		lastActivityTime = LocalDateTime.now();
 	}
 
 	private void onStart(MinecraftServer server) {
@@ -70,6 +87,12 @@ public class Backup implements ModInitializer {
 	}
 
 	private void runBackup(MinecraftServer server) {
+		if (config.onlyWhenPlayersConnected() &&
+				server.getPlayerCount() == 0
+				&& (lastActivityTime == null || LocalDateTime.now()
+						.isAfter(lastActivityTime.plus(config.intervalMinutes(), ChronoUnit.MINUTES)))) {
+			return;
+		}
 		if (!Files.exists(BACKUP_DIR)) {
 			try {
 				Files.createDirectory(BACKUP_DIR);
@@ -198,17 +221,29 @@ public class Backup implements ModInitializer {
 		if (Files.exists(path)) {
 			try {
 				config = gson.fromJson(Files.readString(path), Config.class);
+				if (config == null) {
+					config = new Config();
+					writeConfig(path, gson);
+				}
+				if (config.onlyWhenPlayersConnected() == null) {
+					config = new Config(config.intervalMinutes(), config.maxBackups(), true);
+					writeConfig(path, gson);
+				}
 			} catch (Exception e) {
 				LOGGER.error("Failed to fetch config", e);
 				config = new Config();
 			}
 		} else {
 			config = new Config();
-			try (BufferedWriter writer = Files.newBufferedWriter(path)) {
-				gson.toJson(config, writer);
-			} catch (Exception e) {
-				LOGGER.error("Failed to write config", e);
-			}
+			writeConfig(path, gson);
+		}
+	}
+
+	private void writeConfig(Path path, Gson gson) {
+		try (BufferedWriter writer = Files.newBufferedWriter(path)) {
+			gson.toJson(config, writer);
+		} catch (Exception e) {
+			LOGGER.error("Failed to write config", e);
 		}
 	}
 }
