@@ -178,7 +178,8 @@ public class Backup implements ModInitializer {
 
 	private void saveWorld(MinecraftServer server, boolean disableSaving) {
 		server.executeBlocking(() -> {
-			server.saveEverything(true, true, true);
+			if (disableSaving)
+				server.saveEverything(true, true, true);
 			Iterable<ServerLevel> levels = server.getAllLevels();
 			for (ServerLevel level : levels) {
 				level.noSave = disableSaving;
